@@ -1,15 +1,11 @@
 import numpy as np
 from numpy import linalg
 from scipy.linalg import sqrtm
-
-import math
 import networkx as nx
 
 import perceval as pcvl
-
-import quandelibc as qc
-import matplotlib.pyplot as plt
-
+from perceval.algorithm import Sampler
+import perceval.components as comp
 
 def random_graph_generation(n_nodes, p1, n_densest=0, p2=0):
     '''Generates a random graph with:
@@ -76,6 +72,9 @@ def to_unitary(A):
     R = sqrtm(np.identity(m)-np.dot(An.conj().T, An))
     S = -An.conj().T
     Ubmat = np.bmat([[P, Q], [R, S]])
+    #Ubmat[abs(Ubmat.imag) < 10**(-6)] = 0
+    Ubmat = Ubmat.real
+    #print(Ubmat)
     return (np.copy(Ubmat), c)
 
 
@@ -99,29 +98,58 @@ def post_select(samples):
     return a
 
 
-def perm_estimation(G, Ns, Ns_min=0):
+def perm_estimation(G, nb_samples, Ns_min=0):
     if Ns_min == 0:
-        Ns_min = Ns
+        Ns_min = nb_samples
 
-    Sampling_Backend = pcvl.BackendFactory().get_backend("CliffordClifford2017")
-    m = G.number_of_nodes()
-    print("number of nodes", m)
-    inputState = input_state(m)
-    print(inputState)
+    if type(G) == type(nx.Graph()): 
+        m = G.number_of_nodes()
+    else:
+        m = len(G)
+    in_state = input_state(m)
 
     U, c = to_unitary(G)
-    U = pcvl.Matrix(U)
-    simulator = Sampling_Backend(U)
-    print(len(U), len(U[0]))
+    U_matrix_pcvl = pcvl.Matrix(U)
+    unitary_component = comp.Unitary(U_matrix_pcvl)
+    proc = pcvl.Processor("CliffordClifford2017", unitary_component)
+    proc.with_input(pcvl.BasicState( in_state))
 
     samples = []
     i = 0
+    sampler = Sampler(proc)
     while len(samples) < Ns_min:
-        for _ in range(Ns):
-            samples.append(list(simulator.sample(pcvl.BasicState(inputState))))
+        samples = sampler.samples(nb_samples)['results']
         samples = post_select(samples)
         i = i+1
-    print("Total number of samples: ", Ns*i)
+    print("Total number of samples: ", nb_samples*i)
     print("Number of samples post:", len(samples))
-    perm = (c**m)*np.sqrt(len(samples)/(Ns*i))
+    perm = (c**m)*np.sqrt(len(samples)/(nb_samples*i))
+    return perm
+
+def perm_estimation(G, nb_samples, Ns_min=0):
+    if Ns_min == 0:
+        Ns_min = nb_samples
+
+    if type(G) == type(nx.Graph()):
+        m = G.number_of_nodes()
+    else:
+        m = len(G)
+    in_state = input_state(m)
+
+    U, c = to_unitary(G)
+    U_matrix_pcvl = pcvl.Matrix(U)
+    unitary_component = comp.Unitary(U_matrix_pcvl)
+    proc = pcvl.Processor("CliffordClifford2017", unitary_component)
+    proc.with_input(pcvl.BasicState(in_state))
+
+    samples_accepted = []
+    i = 0
+    sampler = Sampler(proc)
+    while len(samples_accepted) < Ns_min:
+        samples_accepted.append(list(sampler.samples(nb_samples)['results']))
+        samples_accepted = post_select(samples_accepted)
+        i = i+1
+    print("Total number of samples: ", nb_samples*i)
+    print("Number of samples post:", len(samples_accepted))
+    perm = (c**m)*np.sqrt(len(samples_accepted)/(nb_samples*i))
     return perm
