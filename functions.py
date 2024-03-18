@@ -6,6 +6,7 @@ import networkx as nx
 import perceval as pcvl
 from perceval.algorithm import Sampler
 import perceval.components as comp
+import math
 
 def random_graph_generation(n_nodes, p1, n_densest=0, p2=0):
     '''Generates a random graph with:
@@ -51,6 +52,10 @@ def random_graph_generation(n_nodes, p1, n_densest=0, p2=0):
 
     return G
 
+def order_of_magnitude(number):
+    if number == 0:
+        return -20
+    return math.floor(math.log(abs(number), 10))
 
 def to_unitary(A):
     ''' Input: graph A either as:
@@ -59,23 +64,26 @@ def to_unitary(A):
         Output: unitary with size 2mx2m
     '''
 
-    if type(A) == type(nx.Graph()):
-        A = nx.convert_matrix.to_numpy_matrix(A)
+    if isinstance(A, nx.Graph):
+        A = nx.to_numpy_array(A)
     P, D, V = linalg.svd(A)
-
-    c = np.max(D)
-    # if it is not complex, then np.sqrt will output nan in complex values
-    An = np.matrix(A/c, dtype=complex)
+    m = len(A)
+    lsv = np.max(D)
+    An = A/lsv
     P = An
-    m = len(An)
-    Q = sqrtm(np.identity(m)-np.dot(An, An.conj().T))
-    R = sqrtm(np.identity(m)-np.dot(An.conj().T, An))
+
+    if all([order_of_magnitude(value.real)<-9 for row in np.identity(m)-np.dot(An, An.conj().T) for value in row]):
+        print("forcing Q = R = zeros")
+        Q = R = np.zeros((m,m))
+    else:
+        Q = sqrtm(np.identity(m)-np.dot(An, An.conj().T))
+        R = sqrtm(np.identity(m)-np.dot(An.conj().T, An))
+
     S = -An.conj().T
     Ubmat = np.bmat([[P, Q], [R, S]])
-    #Ubmat[abs(Ubmat.imag) < 10**(-6)] = 0
     Ubmat = Ubmat.real
-    #print(Ubmat)
-    return (np.copy(Ubmat), c)
+    return (np.copy(Ubmat), lsv)
+
 
 
 def input_state(m):
